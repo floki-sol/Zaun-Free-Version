@@ -37,12 +37,13 @@ use crate::{
 
 use super::{
     misc::{adjust_file_path, fix_ipfs_url},
-    pdas::get_bonding_curve,
+    pdas::{get_bonding_curve, get_pump_creator_vault, get_pumpswap_creator_vault_authority},
 };
 
-pub fn derive_all_pump_keys(buyer: &Pubkey, mint: Pubkey) -> PumpKeys {
+pub fn derive_all_pump_keys(_buyer: &Pubkey, mint: Pubkey, creator_address: &Pubkey) -> PumpKeys {
     let program_id = Pubkey::from_str(PUMP_PROGRAM_ID).unwrap();
     let bonding_curve = get_bonding_curve(&mint, &program_id);
+    let creator_vault = get_pump_creator_vault(&*creator_address, &program_id);
 
     let associated_bonding_curve = get_associated_token_address(&bonding_curve, &mint);
 
@@ -51,9 +52,10 @@ pub fn derive_all_pump_keys(buyer: &Pubkey, mint: Pubkey) -> PumpKeys {
         mint,
         bonding_curve,
         associated_bonding_curve,
-        fees: Pubkey::from_str(FEE_RECEPIENT).unwrap(),
+        fees: Pubkey::from_str(PUMP_AMM_PROTOCOL_FEES_ADDRESS).unwrap(),
         event_auth: Pubkey::from_str(EVENT_AUTH).unwrap(),
         global_state: Pubkey::from_str(GLOBAL_STATE).unwrap(),
+        creator_vault,
     }
 }
 
@@ -72,12 +74,25 @@ pub struct PumpDexKeys {
     pub pump_amm_event_auth: Pubkey,
     pub pump_amm_protocol_fees: Pubkey,
     pub pump_amm_protocol_fees_quote_ata: Pubkey,
+    pub creator_vault: Pubkey,
+    pub creator_vault_ata: Pubkey,
 }
 
-pub fn derive_all_pump_dex_keys(mint: &Pubkey) -> PumpDexKeys {
+pub fn derive_all_pump_dex_keys(mint: &Pubkey, creator_address: &Pubkey) -> PumpDexKeys {
     let pump_program_id = Pubkey::from_str(PUMP_PROGRAM_ID).unwrap();
     let pump_amm_program_id = Pubkey::from_str(PUMP_AMM_ADDRESS).unwrap();
     let bonding_curve = get_bonding_curve(&mint, &pump_program_id);
+    let creator_vault =
+        get_pumpswap_creator_vault_authority(&*creator_address, &pump_amm_program_id);
+
+    let (creator_vault_ata, _) = Pubkey::find_program_address(
+        &[
+            creator_vault.to_bytes().as_ref(),
+            spl_token::id().to_bytes().as_ref(),
+            native_mint::id().to_bytes().as_ref(),
+        ],
+        &spl_associated_token_account::id(),
+    );
 
     //assume cannonical index
     let index_seed = 0u16.to_le_bytes(); // [0, 0]
@@ -150,6 +165,8 @@ pub fn derive_all_pump_dex_keys(mint: &Pubkey) -> PumpDexKeys {
         pump_amm_event_auth: pump_amm_event_auth,
         pump_amm_protocol_fees: pump_amm_protocol_fees,
         pump_amm_protocol_fees_quote_ata: protocol_fees_quote_ata,
+        creator_vault: creator_vault,
+        creator_vault_ata: creator_vault_ata,
     }
 }
 
@@ -571,7 +588,6 @@ pub async fn fetch_pump_token_general_data(
     //    .await
     //    .map_err(|e| format!("Deserialization error: {}", e))
 }
-
 
 pub async fn fetch_latest_koth() -> Result<Value, String> {
     // Make the HTTP request and handle errors

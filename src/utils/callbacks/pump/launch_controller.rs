@@ -67,20 +67,19 @@ use crate::{
     utils::{
         backups::{backup_files, load_most_recent_lut, BackupType},
         blockhash_manager::RecentBlockhashManager,
-        bonding_curve_provider::{run_curve_provider, BondingCurve, BondingCurveProvider},
-        bundle_factory::{
-            get_classic_launch_bundle,
-            get_create_lookup_table_bundle ,
+        bonding_curve_provider::{
+            get_bonding_curve_creator, run_curve_provider, BondingCurve, BondingCurveProvider,
         },
+        bundle_factory::{get_classic_launch_bundle, get_create_lookup_table_bundle},
         misc::{
             adjust_file_path, calculate_pump_tokens_to_buy, can_use_lut, create_launch_manifest,
             extract_data, extract_lamports, fetch_and_validate_metadata_uri, fix_ipfs_url,
             get_account_subscription_message, get_associated_accounts, get_balances_for_wallets,
-            get_global_lut_data, get_lookup_table_creation_cost,
-            get_session_lut_data, is_valid_decimal_string, is_valid_small_integer_string,
-            parse_token_address, retrieve_funding_manifest, spawn_bundle_timeout_task, split_tip,
+            get_global_lut_data, get_lookup_table_creation_cost, get_session_lut_data,
+            is_valid_decimal_string, is_valid_small_integer_string, parse_token_address,
+            retrieve_funding_manifest, spawn_bundle_timeout_task, split_tip,
         },
-        pdas::{get_bonding_curve, get_bundle_guard},
+        pdas::{get_bonding_curve, get_bundle_guard, get_pump_creator_vault},
         pump_helpers::{derive_all_pump_keys, login, register, upload_metadata},
     },
 };
@@ -502,8 +501,12 @@ pub async fn invoke_launch_callback(
                             let lut_state = AddressLookupTable::deserialize(&data).unwrap();
                             let stored_addresses = lut_state.addresses;
 
-                            should_create_lut =
-                                !can_use_lut(&wallets, stored_addresses.to_vec(), mint);
+                            should_create_lut = !can_use_lut(
+                                &wallets,
+                                &dev_wallet.pubkey(),
+                                stored_addresses.to_vec(),
+                                mint,
+                            );
                         } else {
                             should_create_lut = true;
                         }
@@ -654,14 +657,18 @@ pub async fn invoke_launch_callback(
                     let confirmed_slots_ref = Arc::clone(&confirmed_slots);
                     let slot_sender_flag = Arc::clone(&stop_flag);
                     let slot_timeout_flag = Arc::clone(&timeout_flag);
-
+                    
                     let wallets = wallets
                         .iter()
                         .map(|wallet| Keypair::from_base58_string(wallet).pubkey())
                         .collect::<Vec<Pubkey>>();
 
-                    let lut_addresses = get_associated_accounts(&wallets, keypair.pubkey());
-
+                    let mut lut_addresses = get_associated_accounts(&wallets, keypair.pubkey());
+                    let creator_vault = get_pump_creator_vault(
+                        &dev_wallet.pubkey(),
+                        &Pubkey::from_str(PUMP_PROGRAM_ID).unwrap(),
+                    );
+                    lut_addresses.push(creator_vault);
                     //create an extra task to store confirmed slots
                     tokio::spawn(async move {
                         while !slot_sender_flag.load(Ordering::Relaxed)
@@ -1227,6 +1234,30 @@ pub async fn invoke_launch_callback(
 
                 let url_link = format!("https://pump.fun/coin/{}", &manifest_mint);
 
+                //we get the creator based on the launch type
+                let creator = match launch_mode {
+                    LaunchMode::CTO => {
+                        get_bonding_curve_creator(&manifest_mint, Arc::clone(&connection))
+                    }
+                    _ => Some(dev_wallet.pubkey()),
+                };
+
+                if creator.is_none() {
+                    let mut handler_ref = menu_handler_clone1.lock().await;
+                    handler_ref.to_previous_page();
+                    display_error_page(
+                        String::from("Failed to fetch creator-vault address"),
+                        Some(String::from("Creator Fetch Error")),
+                        None,
+                        Some(5),
+                        &mut handler_ref,
+                        false,
+                    );
+                    spawn_error_input_listener(menu_handler_clone2, 5);
+                    return;
+                }
+                let creator_address = creator.unwrap();
+
                 match launch_mode {
                     LaunchMode::Classic => {
                         //first of all im gonna do some usual preflight checks,
@@ -1314,6 +1345,7 @@ pub async fn invoke_launch_callback(
                             let pump_keys = derive_all_pump_keys(
                                 &funder_keypair_ref.pubkey(),
                                 token_keypair_ref.pubkey(),
+                                &creator_address,
                             );
                             let default_curve = BondingCurve::default();
 

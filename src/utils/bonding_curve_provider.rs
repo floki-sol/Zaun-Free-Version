@@ -9,10 +9,15 @@ use solana_sdk::hash::Hash;
 use solana_sdk::pubkey::Pubkey;
 use std::cmp;
 use std::ops::{Add, Div, Mul, Sub};
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use tokio::sync::watch;
 use tokio::time::{interval, Duration};
+
+use crate::constants::general::PUMP_PROGRAM_ID;
+
+use super::pdas::get_bonding_curve;
 
 #[derive(BorshDeserialize, Debug)]
 pub struct BondingCurve {
@@ -22,6 +27,7 @@ pub struct BondingCurve {
     pub real_sol_reserves: u64,
     pub token_total_supply: u64,
     pub complete: bool,
+    pub creator: Pubkey,
 }
 impl Default for BondingCurve {
     fn default() -> Self {
@@ -32,6 +38,7 @@ impl Default for BondingCurve {
             real_sol_reserves: 0, // Defaulting real_sol_reserves to 0
             token_total_supply: 1000000000000000,
             complete: false, // Explicitly set to false
+            creator: Pubkey::new_unique(),
         }
     }
 }
@@ -245,5 +252,24 @@ pub async fn run_curve_provider(bonding_curve_provider: Arc<BondingCurveProvider
             }
             _ = signal_receiver.changed() => {}
         }
+    }
+}
+
+pub fn get_bonding_curve_creator(mint: &Pubkey, connection: Arc<RpcClient>) -> Option<Pubkey> {
+    let curve = &get_bonding_curve(mint, &Pubkey::from_str(&PUMP_PROGRAM_ID).unwrap());
+    let account = connection.get_account_with_commitment(curve, CommitmentConfig::processed());
+    if let Ok(res) = account {
+        let account = res.value;
+        if let Some(acc) = account {
+            let account_data = acc.data;
+            let bonding_curve: BondingCurve =
+                BondingCurve::deserialize(&mut &account_data[8..]).unwrap();
+            //now we return the creator
+            Some(bonding_curve.creator)
+        } else {
+            None
+        }
+    } else {
+        None
     }
 }

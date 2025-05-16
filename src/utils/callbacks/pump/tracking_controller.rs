@@ -63,7 +63,9 @@ use crate::{
     },
     utils::{
         blockhash_manager::RecentBlockhashManager,
-        bonding_curve_provider::{run_curve_provider, BondingCurve, BondingCurveProvider},
+        bonding_curve_provider::{
+            get_bonding_curve_creator, run_curve_provider, BondingCurve, BondingCurveProvider,
+        },
         bundle_factory::{
             get_bonded_multi_wallet_sell_bundle, get_burn_or_retrieve_tokens_bundle,
             get_normal_multi_wallet_sell_bundle,
@@ -71,12 +73,12 @@ use crate::{
         comments_manager::{CommentType, CommentsManager},
         misc::{
             extract_lamports, get_account_subscription_message, get_associated_accounts,
-            get_global_lut_data,
-            spawn_bundle_timeout_task,
+            get_global_lut_data, spawn_bundle_timeout_task,
         },
         pdas::get_bundle_guard,
         pump_helpers::{
-            derive_all_pump_dex_keys, derive_all_pump_keys, fetch_pump_token_general_data, PumpDexKeys,
+            derive_all_pump_dex_keys, derive_all_pump_keys, fetch_pump_token_general_data,
+            PumpDexKeys,
         },
     },
 };
@@ -165,17 +167,36 @@ pub async fn invoke_tracking_callback(
 
             let manifest = Arc::new(manifest_validation.unwrap());
 
-            //first derive the pump keys
-            let pump_keys = Arc::new(derive_all_pump_keys(
-                &dev_wallet.pubkey(),
-                manifest.mint.clone(),
-            ));
-
             display_loading_page(String::from("Checking balances."), &mut loading_handler_ref);
             drop(loading_handler_ref);
 
             //now im gonna fetch the balances of the wallets and filter the valid ones
             tokio::spawn(async move {
+                let creator = get_bonding_curve_creator(&manifest.mint, Arc::clone(&connection));
+                if creator.is_none() {
+                    let mut handler_ref = menu_handler_clone1.lock().await;
+                    handler_ref.to_previous_page();
+                    display_error_page(
+                        String::from("Failed to fetch creator-vault address"),
+                        Some(String::from("Creator Fetch Error")),
+                        None,
+                        Some(5),
+                        &mut handler_ref,
+                        false, //menu_handler_clone2
+                    );
+                    spawn_error_input_listener(menu_handler_clone2, 5);
+                    return;
+                }
+
+                let creator_address = creator.unwrap();
+
+                //first derive the pump keys
+                let pump_keys = Arc::new(derive_all_pump_keys(
+                    &dev_wallet.pubkey(),
+                    manifest.mint.clone(),
+                    &creator_address,
+                ));
+
                 // Fetch data outside the lock
                 let pubkeys = Arc::clone(&manifest)
                     .wallet_entries
@@ -278,7 +299,7 @@ pub async fn invoke_tracking_callback(
                         handler_ref.to_previous_page();
                         display_bundle_guard_fetch_error_page(&mut handler_ref);
                         spawn_error_input_listener(menu_handler, 10);
-                        return
+                        return;
                     }
 
                     let guard_data = BundleGuard::deserialize(
@@ -433,41 +454,39 @@ pub async fn invoke_tracking_callback(
 
             let manifest = Arc::new(manifest_validation.unwrap());
 
-            //first derive the pump keys
-            let pump_keys = Arc::new(derive_all_pump_keys(
-                &dev_wallet.pubkey(),
-                manifest.mint.clone(),
-            ));
-
             display_loading_page(
                 String::from("Retrieving Pump AMM pool."),
                 &mut loading_handler_ref,
             );
             drop(loading_handler_ref);
             tokio::spawn(async move {
-                //let general_coin_fetch_response =
-                //    fetch_pump_token_general_data(&pump_keys.mint).await;
-                //if let Err(ref e) = general_coin_fetch_response {
-                //    let mut handler_ref = menu_handler_clone1.lock().await;
-                //    handler_ref.to_previous_page();
-                //    display_error_page(
-                //        e.clone(),
-                //        Some(String::from("Pump Fetch error")),
-                //        Some(vec![String::from("Failed to fetch Pump swap pool data")]),
-                //        Some(10),
-                //        &mut handler_ref,
-                //        false, //menu_handler_clone2
-                //    );
-                //    spawn_error_input_listener(menu_handler_clone2, 10);
-                //    return;
-                //}
-                //
-                //let coin_data = general_coin_fetch_response.unwrap();
-                //let creator = coin_data.creator;
+                let creator = get_bonding_curve_creator(&manifest.mint, Arc::clone(&connection));
+                if creator.is_none() {
+                    let mut handler_ref = menu_handler_clone1.lock().await;
+                    handler_ref.to_previous_page();
+                    display_error_page(
+                        String::from("Failed to fetch creator-vault address"),
+                        Some(String::from("Creator Fetch Error")),
+                        None,
+                        Some(5),
+                        &mut handler_ref,
+                        false, //menu_handler_clone2
+                    );
+                    spawn_error_input_listener(menu_handler_clone2, 5);
+                    return;
+                }
 
-                let derived_pump_dex_keys = Arc::new(derive_all_pump_dex_keys(&pump_keys.mint));
+                let creator_address = creator.unwrap();
 
-                info!("{:#?}", derived_pump_dex_keys);
+                //first derive the pump keys
+                let pump_keys = Arc::new(derive_all_pump_keys(
+                    &dev_wallet.pubkey(),
+                    manifest.mint.clone(),
+                    &creator_address,
+                ));
+
+                let derived_pump_dex_keys =
+                    Arc::new(derive_all_pump_dex_keys(&pump_keys.mint, &creator_address));
 
                 //now im gonna fetch the account data for the pool
                 let account_data = connection.get_account_with_commitment(
@@ -593,7 +612,7 @@ pub async fn invoke_tracking_callback(
                         handler_ref.to_previous_page();
                         display_bundle_guard_fetch_error_page(&mut handler_ref);
                         spawn_error_input_listener(menu_handler, 10);
-                        return
+                        return;
                     }
 
                     let guard_data = BundleGuard::deserialize(
@@ -747,40 +766,38 @@ pub async fn invoke_tracking_callback(
             }
             let manifest = Arc::new(manifest_validation.unwrap());
 
-            //first derive the pump keys
-            let pump_keys = Arc::new(derive_all_pump_keys(
-                &dev_wallet.pubkey(),
-                manifest.mint.clone(),
-            ));
-
             display_loading_page(String::from("Preparing"), &mut loading_handler_ref);
             drop(loading_handler_ref);
 
             //first of all I have to load the bundle guard, wallets data and creator from api.
             tokio::spawn(async move {
-                //load the creator first
+                let creator = get_bonding_curve_creator(&manifest.mint, Arc::clone(&connection));
+                if creator.is_none() {
+                    let mut handler_ref = menu_handler_clone1.lock().await;
+                    handler_ref.to_previous_page();
+                    display_error_page(
+                        String::from("Failed to fetch creator-vault address"),
+                        Some(String::from("Creator Fetch Error")),
+                        None,
+                        Some(5),
+                        &mut handler_ref,
+                        false, //menu_handler_clone2
+                    );
+                    spawn_error_input_listener(menu_handler_clone2, 5);
+                    return;
+                }
 
-                //let general_coin_fetch_response =
-                //    fetch_pump_token_general_data(&pump_keys.mint).await;
-                //if let Err(ref e) = general_coin_fetch_response {
-                //    let mut handler_ref = menu_handler_clone1.lock().await;
-                //    handler_ref.to_previous_page();
-                //    display_error_page(
-                //        e.clone(),
-                //        Some(String::from("Pump Fetch error")),
-                //        Some(vec![String::from("Failed to fetch coin data")]),
-                //        Some(10),
-                //        &mut handler_ref,
-                //        false, //menu_handler_clone2
-                //    );
-                //    spawn_error_input_listener(menu_handler_clone2, 10);
-                //    return;
-                //}
-                //
-                //let coin_data = general_coin_fetch_response.unwrap();
-                //let creator = coin_data.creator;
+                let creator_address = creator.unwrap();
 
-                let derived_pump_dex_keys = Arc::new(derive_all_pump_dex_keys(&pump_keys.mint));
+                //first derive the pump keys
+                let pump_keys = Arc::new(derive_all_pump_keys(
+                    &dev_wallet.pubkey(),
+                    manifest.mint.clone(),
+                    &creator_address,
+                ));
+
+                let derived_pump_dex_keys =
+                    Arc::new(derive_all_pump_dex_keys(&pump_keys.mint, &creator_address));
 
                 let pubkeys = Arc::clone(&manifest)
                     .wallet_entries
@@ -869,7 +886,7 @@ pub async fn invoke_tracking_callback(
                     handler_ref.to_previous_page();
                     display_bundle_guard_fetch_error_page(&mut handler_ref);
                     spawn_error_input_listener(menu_handler, 10);
-                    return
+                    return;
                 }
 
                 let guard_data =
@@ -1155,12 +1172,6 @@ pub async fn invoke_tracking_callback(
 
             let manifest = Arc::new(manifest_validation.unwrap());
 
-            //first derive the pump keys
-            let pump_keys = Arc::new(derive_all_pump_keys(
-                &dev_wallet.pubkey(),
-                manifest.mint.clone(),
-            ));
-
             display_loading_page(
                 String::from("Checking Dev Balance."),
                 &mut loading_handler_ref,
@@ -1168,6 +1179,31 @@ pub async fn invoke_tracking_callback(
             drop(loading_handler_ref);
 
             tokio::spawn(async move {
+                let creator = get_bonding_curve_creator(&manifest.mint, Arc::clone(&connection));
+                if creator.is_none() {
+                    let mut handler_ref = menu_handler_clone1.lock().await;
+                    handler_ref.to_previous_page();
+                    display_error_page(
+                        String::from("Failed to fetch creator-vault address"),
+                        Some(String::from("Creator Fetch Error")),
+                        None,
+                        Some(5),
+                        &mut handler_ref,
+                        false, //menu_handler_clone2
+                    );
+                    spawn_error_input_listener(menu_handler_clone2, 5);
+                    return;
+                }
+
+                let creator_address = creator.unwrap();
+
+                //first derive the pump keys
+                let pump_keys = Arc::new(derive_all_pump_keys(
+                    &dev_wallet.pubkey(),
+                    manifest.mint.clone(),
+                    &creator_address,
+                ));
+
                 let dev = Arc::clone(&manifest.wallet_entries.get(0).unwrap().wallet);
                 let dev_ata = get_associated_token_address(&dev.pubkey(), &pump_keys.mint);
                 let ata_account_data = connection.get_account(&dev_ata);
@@ -1231,7 +1267,7 @@ pub async fn invoke_tracking_callback(
                         handler_ref.to_previous_page();
                         display_bundle_guard_fetch_error_page(&mut handler_ref);
                         spawn_error_input_listener(menu_handler, 10);
-                        return
+                        return;
                     }
 
                     let guard_data = BundleGuard::deserialize(

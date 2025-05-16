@@ -30,11 +30,10 @@ use crate::{
     utils::pdas::get_metadata_pda,
 };
 
-use super::{
-    callbacks::pump, misc::get_associated_accounts, pump_helpers::PumpDexKeys,
-};
+use super::{callbacks::pump, misc::get_associated_accounts, pump_helpers::PumpDexKeys};
 
 const PUMP_CREATE_IX_DISCRIMINATOR: [u8; 8] = [24, 30, 200, 40, 5, 28, 7, 119];
+const PUMP_EXTEND_BONDING_CURVE_IX: [u8; 8] = [234, 102, 194, 203, 150, 72, 62, 229];
 const PUMP_BUY_IX_DISCRIMINATOR: [u8; 8] = [102, 6, 61, 18, 1, 218, 235, 234];
 const PUMP_SELL_IX_DISCRIMINATOR: [u8; 8] = [51, 230, 133, 164, 1, 127, 131, 173];
 const IN_CONTRACT_BUY_IX_DISCRIMINATOR: [u8; 8] = [192, 150, 68, 220, 2, 7, 59, 222];
@@ -89,6 +88,26 @@ pub fn get_create_pump_token_instruction(
     create_token_ix
 }
 
+pub fn get_extend_pump_bonding_curve_ix(pump_keys: &PumpKeys, creator: &Pubkey) -> Instruction {
+    let account_metas = vec![
+        AccountMeta::new(pump_keys.bonding_curve, false),
+        AccountMeta::new(*creator, true),
+        AccountMeta::new_readonly(system_program::id(), false),
+        AccountMeta::new_readonly(pump_keys.event_auth, false),
+        AccountMeta::new_readonly(pump_keys.pump_program_id, false),
+    ];
+    let mut data: Vec<u8> = vec![];
+    data.extend_from_slice(&PUMP_EXTEND_BONDING_CURVE_IX); // instruction discriminator
+
+    let extend_curve_ix = Instruction {
+        program_id: pump_keys.pump_program_id,
+        accounts: account_metas,
+        data,
+    };
+
+    extend_curve_ix
+}
+
 pub fn get_buy_pump_token_instructions(
     pump_keys: &PumpKeys,
     buyer: &Pubkey,
@@ -108,7 +127,7 @@ pub fn get_buy_pump_token_instructions(
         AccountMeta::new(*buyer, true),
         AccountMeta::new_readonly(system_program::id(), false),
         AccountMeta::new_readonly(spl_token::id(), false),
-        AccountMeta::new_readonly(solana_sdk::sysvar::rent::id(), false),
+        AccountMeta::new(pump_keys.creator_vault, false),
         AccountMeta::new_readonly(pump_keys.event_auth, false),
         AccountMeta::new_readonly(pump_keys.pump_program_id, false),
     ];
@@ -144,7 +163,7 @@ pub fn get_sell_pump_token_instructions(
         AccountMeta::new(seller_ata, false),
         AccountMeta::new(*seller, true),
         AccountMeta::new_readonly(system_program::ID, false),
-        AccountMeta::new_readonly(spl_associated_token_account::ID, false),
+        AccountMeta::new(pump_keys.creator_vault, false),
         AccountMeta::new_readonly(spl_token::ID, false),
         AccountMeta::new_readonly(pump_keys.event_auth, false),
         AccountMeta::new_readonly(pump_keys.pump_program_id, false),
@@ -181,7 +200,7 @@ pub fn get_in_contract_pump_buy_instruction(
         AccountMeta::new(pump_keys.associated_bonding_curve, false),
         AccountMeta::new_readonly(system_program::id(), false),
         AccountMeta::new_readonly(spl_token::id(), false),
-        AccountMeta::new_readonly(solana_sdk::sysvar::rent::id(), false),
+        AccountMeta::new(pump_keys.creator_vault, false),
         AccountMeta::new_readonly(spl_associated_token_account::id(), false),
         AccountMeta::new_readonly(pump_keys.event_auth, false),
         AccountMeta::new_readonly(pump_keys.pump_program_id, false),
@@ -287,7 +306,6 @@ pub fn get_increment_bundle_guard_ix(
     }
 }
 
-
 pub fn get_create_lookup_table_ix(funder: Arc<Keypair>, slot: u64) -> (Instruction, Pubkey) {
     create_lookup_table(funder.pubkey(), funder.pubkey(), slot)
 }
@@ -312,8 +330,6 @@ pub fn get_deactivate_lut_ix(funder: Arc<Keypair>, lookup_table: Pubkey) -> Inst
 pub fn get_close_lut_ix(funder: Arc<Keypair>, lookup_table: Pubkey) -> Instruction {
     close_lookup_table(lookup_table, funder.pubkey(), funder.pubkey())
 }
-
-
 
 pub fn create_pf_amm_sell_instruction(
     trader: Arc<Keypair>,
@@ -342,6 +358,8 @@ pub fn create_pf_amm_sell_instruction(
         AccountMeta::new_readonly(spl_associated_token_account::id(), false),
         AccountMeta::new_readonly(pool_keys.pump_amm_event_auth, false),
         AccountMeta::new_readonly(pool_keys.program_id, false),
+        AccountMeta::new(pool_keys.creator_vault_ata, false),
+        AccountMeta::new_readonly(pool_keys.creator_vault, false),
     ];
 
     let mut data = vec![51, 230, 133, 164, 1, 127, 131, 173];

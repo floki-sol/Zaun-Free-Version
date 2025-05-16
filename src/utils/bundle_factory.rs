@@ -45,12 +45,7 @@ use super::{
     blockhash_manager::RecentBlockhashManager,
     bonding_curve_provider::{BondingCurve, BondingCurveProvider},
     instructions::{
-        create_pf_amm_sell_instruction,
-        get_buy_pump_token_instructions, get_close_lut_ix, get_create_bundle_guard_ix,
-        get_create_lookup_table_ix, get_create_pump_token_instruction, get_deactivate_lut_ix,
-        get_extend_lookup_table_ix, get_in_contract_pump_buy_instruction,
-        get_increment_bundle_guard_ix,
-        get_sell_pump_token_instructions, get_unique_memo_ix,
+        create_pf_amm_sell_instruction, get_buy_pump_token_instructions, get_close_lut_ix, get_create_bundle_guard_ix, get_create_lookup_table_ix, get_create_pump_token_instruction, get_deactivate_lut_ix, get_extend_lookup_table_ix, get_extend_pump_bonding_curve_ix, get_in_contract_pump_buy_instruction, get_increment_bundle_guard_ix, get_sell_pump_token_instructions, get_unique_memo_ix
     },
     misc::calculate_pump_tokens_to_buy,
     pump_helpers::PumpDexKeys,
@@ -588,10 +583,15 @@ pub fn get_classic_launch_bundle(
         symbol,
         metadata_uri,
     );
+    let extend_curve_ix = get_extend_pump_bonding_curve_ix(&pump_keys, &dev_wallet.pubkey());
+
     creation_stage_ixs.push(compute_price_ix);
     creation_stage_ixs.push(compute_limit_ix);
     creation_stage_ixs.push(memo_ix);
     creation_stage_ixs.push(create_ix);
+    creation_stage_ixs.push(extend_curve_ix);
+
+    
 
     //info!("after base ixs");
 

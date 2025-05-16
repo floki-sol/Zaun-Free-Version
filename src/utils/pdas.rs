@@ -3,7 +3,7 @@ use std::str::{self, FromStr};
 use solana_sdk::pubkey::Pubkey;
 
 use crate::constants::general::{
-    BUNDLER_GUARD_SEED, METADATA_SEED, METAPLEX_METADATA, PUMP_BONDING_CURVE_SEED
+    BUNDLER_GUARD_SEED, METADATA_SEED, METAPLEX_METADATA, PUMP_BONDING_CURVE_SEED, PUMP_CREATOR_VAULT_AUTHORITY_SEED, PUMP_CREATOR_VAULT_SEED
 };
 
 fn encode_utf8(value: &str) -> &[u8] {
@@ -14,6 +14,25 @@ pub fn get_bonding_curve(mint: &Pubkey, program_id: &Pubkey) -> Pubkey {
     let seeds: &[&[u8]] = &[
         PUMP_BONDING_CURVE_SEED,
         mint.as_ref(), // Convert mint to bytes
+    ];
+    Pubkey::find_program_address(&seeds, program_id).0
+}
+
+pub fn get_pump_creator_vault(creator_address: &Pubkey, program_id: &Pubkey) -> Pubkey {
+    let seeds: &[&[u8]] = &[
+        PUMP_CREATOR_VAULT_SEED,
+        creator_address.as_ref(), // Convert mint to bytes
+    ];
+    Pubkey::find_program_address(&seeds, program_id).0
+}
+
+pub fn get_pumpswap_creator_vault_authority(
+    creator_address: &Pubkey,
+    program_id: &Pubkey,
+) -> Pubkey {
+    let seeds: &[&[u8]] = &[
+        PUMP_CREATOR_VAULT_AUTHORITY_SEED,
+        creator_address.as_ref(), // Convert mint to bytes
     ];
     Pubkey::find_program_address(&seeds, program_id).0
 }

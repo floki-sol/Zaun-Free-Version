@@ -43,10 +43,10 @@ use terminal::disable_raw_mode;
 
 use crate::cli::menu::MenuHandler;
 use crate::constants::general::{
-    AMM_V4,
-    AMM_V4_AUTHORITY, AMM_V4_CONFIG, AMM_V4_FEES, DEFAULT_WEBHOOK_IMAGE_PLACEHORLDER, EVENT_AUTH,
-    FEE_RECEPIENT, GENERAL_COINS_ENDPOINT, GLOBAL_LUT_ADDRESS, GLOBAL_STATE, MEMO_PROGRAM_ID,
-    METAPLEX_METADATA, MINT_AUTH, OPENBOOK, PUMP_PROGRAM_ID, PUMP_TOKEN_DECIMALS, SYSVAR_RENT_ID,
+    AMM_V4, AMM_V4_AUTHORITY, AMM_V4_CONFIG, AMM_V4_FEES, DEFAULT_WEBHOOK_IMAGE_PLACEHORLDER,
+    EVENT_AUTH, FEE_RECEPIENT, GENERAL_COINS_ENDPOINT, GLOBAL_LUT_ADDRESS, GLOBAL_STATE,
+    MEMO_PROGRAM_ID, METAPLEX_METADATA, MINT_AUTH, OPENBOOK, PUMP_PROGRAM_ID, PUMP_TOKEN_DECIMALS,
+    SYSVAR_RENT_ID,
 };
 use crate::loaders::global_config_loader::GlobalConfig;
 use crate::loaders::launch_manifest_loader::LaunchManifest;
@@ -55,7 +55,7 @@ use crate::loaders::metadata_loader::Metadata;
 use super::backups::backup_files;
 use super::blockhash_manager::RecentBlockhashManager;
 use super::bonding_curve_provider::BondingCurve;
-use super::pdas::get_bonding_curve;
+use super::pdas::{get_bonding_curve, get_pump_creator_vault};
 
 #[derive(Clone, Debug)]
 pub enum WalletType {
@@ -325,13 +325,22 @@ pub fn retrieve_funding_manifest() -> Result<Vec<f64>, String> {
     Ok(amounts)
 }
 
-pub fn can_use_lut(wallets: &Vec<String>, lut_addresses: Vec<Pubkey>, token: Pubkey) -> bool {
-    let wallets_atas: Vec<Pubkey> = wallets
+pub fn can_use_lut(
+    wallets: &Vec<String>,
+    dev_address: &Pubkey,
+    lut_addresses: Vec<Pubkey>,
+    token: Pubkey,
+) -> bool {
+    let mut wallets_atas: Vec<Pubkey> = wallets
         .iter()
         .map(|wallet| {
             get_associated_token_address(&Keypair::from_base58_string(wallet).pubkey(), &token)
         })
         .collect();
+
+    let creator_vault =
+        get_pump_creator_vault(dev_address, &Pubkey::from_str(PUMP_PROGRAM_ID).unwrap());
+    wallets_atas.push(creator_vault);
 
     for ata in wallets_atas {
         if !lut_addresses.contains(&ata) {

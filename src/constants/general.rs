@@ -13,7 +13,7 @@ pub const MINT_AUTH: &str = "TSLvdd1pWpHVjahSpsvCXUbgwsL3JAcvokwaKt1eokM";
 pub const PUMP_MIGRATION_AUTHORITY: &str = "39azUYFWPz3VHgKCf3VChUwbpURdCHRxjWVowf5jUJjg";
 pub const METAPLEX_METADATA: &str = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s";
 pub const PUMP_PROGRAM_ID: &str = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P";
-pub const BOT_PROGRAM_ID: &str = "4xgDjbqoGszULh2viH5xpff11SSgWc8kViGubReFdkXf";
+pub const BOT_PROGRAM_ID: &str = "33AnLbRvZctaCqpcAFG71g4UecwHX9snF6x3ADPjDCio";
 pub const MEMO_PROGRAM_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 pub const SYSVAR_RENT_ID: &str = "SysvarRent111111111111111111111111111111111";
 pub const AMM_V4: &str = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8";
@@ -27,11 +27,14 @@ pub const GLOBAL_LUT_ADDRESS: &str = "CFooz7YWnXSsyNbK6TWswa3WwXahSPXuz3uotEikYb
 pub const PUMP_AMM_ADDRESS: &str = "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA";
 pub const PUMP_AMM_GLOBAL_CONFIG_ADDRESS: &str = "ADyA8hdefvWN2dbGGWFotbzWxrAvLW83WG6QCVXvJKqw";
 pub const PUMP_AMM_EVENT_AUTH_ADDRESS: &str = "GS4CU59F31iL7aR2Q8zVS8DRrcRnXX1yjQ66TqNVQnaR";
+//can be used for both pump.fun and pump amm after creator fees update
 pub const PUMP_AMM_PROTOCOL_FEES_ADDRESS: &str = "9rPYyANsfQZw3DnDmKE3YCQF5E8oD89UXoHn9JFEhJUz";
 
 //seed constants
 pub const BUNDLER_GUARD_SEED: &[u8; 13] = b"bundler_guard";
 pub const PUMP_BONDING_CURVE_SEED: &[u8; 13] = b"bonding-curve";
+pub const PUMP_CREATOR_VAULT_SEED: &[u8; 13] = b"creator-vault";
+pub const PUMP_CREATOR_VAULT_AUTHORITY_SEED: &[u8; 13] = b"creator_vault";
 pub const METADATA_SEED: &[u8; 8] = b"metadata";
 
 pub static TIP_ACCOUNTS: [&str; 8] = [
@@ -124,6 +127,7 @@ pub struct PumpKeys {
     pub fees: Pubkey,
     pub event_auth: Pubkey,
     pub global_state: Pubkey,
+    pub creator_vault: Pubkey,
 }
 #[derive(BorshDeserialize, Debug, Clone)]
 pub struct BundleGuard {
